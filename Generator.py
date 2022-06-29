@@ -1,7 +1,5 @@
 ####################################################################################################################
 # # # # # # # # # # #      Future Works      # # # # # # # # # #
-# Effects of weekends will be included
-# Effects of special days will be included
 # Trends will be included
 # Seasonality will be included
 # Effects of substitute products will be included
@@ -130,7 +128,8 @@ customer.to_excel('customer.xlsx')
 # # # # # # # # # # #      Creation of Sales Data      # # # # # # # # # #
 # 1- A probability list is created considering the frequencies of customers
 # 2- Number of customers visiting the store for each day is defined randomly within the range of
-#   average daily customers +-50%
+#   average daily customers +-50%. If it is weekend it is increased by "weekend_ratio" +-20%. If it is a special
+#   day it is increased by "special_day_ratio" +-20%.
 # 3- The customers visiting the store for each day is defined randomly considering probability list
 # 4- For each visiting customer, category probability list is created considering customer's category demand rates
 # 5- For each visiting customer, basket size is defined randomly within the range of average basket size of the
@@ -151,9 +150,13 @@ for i in range(1 + int((endda - begda).days)):
     demand_log = dict()
     price_log = dict()
     curr_date = begda + timedelta(days=i)
-    daily_customer_list = numpy.random.choice(list(customer['CustomerID']),
-                                              random.randint(int(average_daily_customers/2), int(3 * average_daily_customers/2)),
-                                              p=probability_list, replace=False)
+    num_visitor = random.randint(int(average_daily_customers/2), int(3 * average_daily_customers/2))
+    if curr_date.weekday() > 4:
+        num_visitor = int(num_visitor * (1 + weekend_ratio/100) * (0.4 * random.random() + 0.8))
+    if curr_date in special_days:
+        num_visitor = int(num_visitor * (1 + special_day_ratio/100) * (0.4 * random.random() + 0.8))
+    print(curr_date, num_visitor)
+    daily_customer_list = numpy.random.choice(list(customer['CustomerID']), num_visitor, p=probability_list, replace=False)
     for j in daily_customer_list:
         preference_list = customer[customer['CustomerID'] == j][categories].values[0]
         s = sum(preference_list)
