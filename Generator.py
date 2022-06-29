@@ -1,6 +1,5 @@
 ####################################################################################################################
 # # # # # # # # # # #      Future Works      # # # # # # # # # #
-# Effects of substitute products will be included
 # Effects of complementary products will be included
 # Multiple stores will be used
 ####################################################################################################################
@@ -40,6 +39,7 @@ average_daily_customers = 30        # Average number of daily customers
 weekend_ratio = 50                  # Rate of increase in number of visitors at weekends (%)
 special_day_ratio = 100             # Rate of increase in number of visitors at special days (%)
 seasonality_ratio = 500             # Maximum rate of increase in sales of seasonal products (%)
+substitute_ratio = 20               # Percentage of the products that has substitutes
 promotion_rate = 3                  # Number of simultaneous promotions
 yearly_inflation_rate = 3           # Yearly inflation rate
 pricing_period = 30                 # Maximum effective duration of price changes on customers' decisions
@@ -67,13 +67,41 @@ for i in range(num_pro):
     end_season = 0
     up = 0
     if random.random() < (num_season / num_pro):
-        beg_season = numpy.random.choice(list(range(1,13)), 1, replace=False)[0]
+        beg_season = np.random.choice(list(range(1,13)), 1, replace=False)[0]
         end_season = beg_season + numpy.random.choice(list(range(min_season - 1,max_season)), 1, replace=False)[0]
         up = random.uniform(100, seasonality_ratio)
     products = pd.concat([products, pd.DataFrame([[random.choice(categories), i, price, demand_rate, elasticity,\
                                                    trend_coefficient, beg_season, end_season, up]], columns=cols)], ignore_index=True)
 products = products.sort_values(by=['Category', 'ProductID'])
 products.to_excel('products.xlsx')
+
+
+####################################################################################################################
+# # # # # # # # # # #      Effect of Product Substitutes      # # # # # # # # # #
+#
+####################################################################################################################
+
+scols = ['Category', 'ProductID', 'Substitute', 'Strength']
+substitutes = pd.DataFrame(columns=scols)
+for i in range(num_pro):
+    if random.random() < (substitute_ratio / num_pro):
+        category = products[products['ProductID'] == i]['Category'].values[0]
+        product_list = list(products[products['Category'] == category]['ProductID'].values)
+        stop = 2
+        while stop >= 1:
+            substitute = i
+            while substitute == i:
+                substitute = np.random.choice(product_list, 1, replace=False)[0]
+            product_list.remove(substitute)
+            strength = np.random.choice(list(range(3)), 1, replace=False)[0]
+            strength = 10 + 20 * strength
+            substitutes = pd.concat([substitutes, pd.DataFrame([[category, i, substitute, random.uniform(strength-10, strength+10)]], columns=scols)], ignore_index=True)
+            if random.random() < 1 / stop:
+                stop *= 2
+            else:
+                stop = 0
+substitutes.to_excel('substitutes.xlsx')
+
 
 
 ####################################################################################################################
@@ -259,6 +287,11 @@ for i in range(1 + int((endda - begda).days)):
                     product_seasonality_up = products[products['ProductID'] == product_list[index]]['Up'].values[0]
                     if product_seasonality_beg != 0 and ((product_seasonality_beg <= curr_date.month <= product_seasonality_end) or (product_seasonality_beg <= 12 + curr_date.month <= product_seasonality_end)):
                         product_demands[index] = product_demands[index] * product_seasonality_up / 100
+                    substitute_list = substitutes[substitutes['ProductID'] == product_list[index]]['Substitute'].values
+                    strength_list = substitutes[substitutes['ProductID'] == product_list[index]]['Strength'].values
+                    for subindex, subvalue in enumerate(substitute_list):
+                        if len(discount[(discount['ProductID'] == subvalue) & (discount['Beg'] <= curr_date) & (discount['End'] >= curr_date)]['Beg'].values) >= 1:
+                            product_demands[index] = product_demands[index] * strength_list[subindex] / 100
                     demand_log[selected_category[0]] = product_demands
             s = sum(product_demands)
             product_probability = [c / s for c in product_demands]
