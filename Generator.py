@@ -1,12 +1,9 @@
 ####################################################################################################################
 # # # # # # # # # # #      Future Works      # # # # # # # # # #
-# Trends will be included
-# Seasonality will be included
 # Effects of substitute products will be included
 # Effects of complementary products will be included
 # Multiple stores will be used
 ####################################################################################################################
-
 
 import numpy.random
 import pandas as pd
@@ -23,6 +20,10 @@ special_days = [date(2022,6, 16)]   # Special dates such as Mother's Day, Christ
 num_cat = 10                        # Number of product categories
 num_pro = 100                       # Total number of products in all categories
 num_cust = 100                      # Number of customers
+num_trends = 10                     # Number of trending products
+num_season = 10                     # Number of seasonal products
+min_trends = -20                    # Minimum trend coefficient
+max_trends = 20                     # Maximum trend coefficient
 min_price = 1                       # Minimum product price
 max_price = 100                     # Maximum product price
 min_prom_len_days = 2               # Minimum promotion duration in days
@@ -33,26 +34,44 @@ min_visit_frequency = 1             # Minimum visit frequency of a customer (day
 max_visit_frequency = 30            # Maximum visit frequency of a customer (days)
 min_shopping_volume = 1             # Minimum number of items in a customer's basket
 max_shopping_volume = 50            # Maximum number of items in each customer's basket
+min_season = 1                      # Minimum length of season in months
+max_season = 6                      # Maximum length of season in months
 average_daily_customers = 30        # Average number of daily customers
 weekend_ratio = 50                  # Rate of increase in number of visitors at weekends (%)
 special_day_ratio = 100             # Rate of increase in number of visitors at special days (%)
+seasonality_ratio = 500             # Maximum rate of increase in sales of seasonal products (%)
 promotion_rate = 3                  # Number of simultaneous promotions
 yearly_inflation_rate = 3           # Yearly inflation rate
 pricing_period = 30                 # Maximum effective duration of price changes on customers' decisions
 
+
 ####################################################################################################################
 # # # # # # # # # # #      Creation of Product Categories and Products      # # # # # # # # # #
-# demand rates are relative sales potentials of each product within the category
-# elasticity is the demand sensitivity of products against price changes
+# Demand rates are relative sales potentials of each product within the category
+# Elasticity is the demand sensitivity of products against price changes
+# There can be positive or negative demand
+# If the product is a seasonal product, BegSeason is the beginning of the season, and EndSeason is the end of it.
+#   Up is the rate that indicates how much the product is affected by seasonality.
 ####################################################################################################################
 categories = list(range(num_cat))
-cols = ['Category', 'ProductID', 'Price', 'Demand', 'Elasticity']
+cols = ['Category', 'ProductID', 'Price', 'Demand', 'Elasticity', 'Trend', 'BegSeason', 'EndSeason', 'Up']
 products = pd.DataFrame(columns=cols)
 for i in range(num_pro):
     price = random.randint(min_price, max_price)
     demand_rate = random.random()
     elasticity = 2 * random.random() + 1
-    products = pd.concat([products, pd.DataFrame([[random.choice(categories), i, price, demand_rate, elasticity]], columns=cols)], ignore_index=True)
+    trend_coefficient = 0
+    if random.random() < (num_trends / num_pro):
+        trend_coefficient = random.uniform(min_trends, max_trends)
+    beg_season = 0
+    end_season = 0
+    up = 0
+    if random.random() < (num_season / num_pro):
+        beg_season = numpy.random.choice(list(range(1,13)), 1, replace=False)[0]
+        end_season = beg_season + numpy.random.choice(list(range(min_season - 1,max_season)), 1, replace=False)[0]
+        up = random.uniform(100, seasonality_ratio)
+    products = pd.concat([products, pd.DataFrame([[random.choice(categories), i, price, demand_rate, elasticity,\
+                                                   trend_coefficient, beg_season, end_season, up]], columns=cols)], ignore_index=True)
 products = products.sort_values(by=['Category', 'ProductID'])
 products.to_excel('products.xlsx')
 
@@ -136,10 +155,12 @@ customer.to_excel('customer.xlsx')
 #   customer +-50%
 # 6- For each visiting customer, selected categories are defined randomly considering category probability lists
 # 7- Within each selected category, product demand rates are updated considering price changes (with inflation
-#   or promotions). Current price and tha average price of "pricing_period" is used for calculation.
-# 8- Within each selected category, a product is selected randomly considering updated product demand rates
-# 9- The number of pieces of selected product is defined randomly and added to customer basket
-# 10 - The increase in sales of promoted products will partially increase total sales
+#   or promotions). Current price and tha average price of "pricing_period" is used for calculation
+# 8- Product demand rates are updated considering trends
+# 9- Product demand rates are updated considering seasonality
+# 10- Within each selected category, a product is selected randomly considering updated product demand rates
+# 11- The number of pieces of selected product is defined randomly and added to customer basket
+# 12 - The increase in sales of promoted products will partially increase total sales
 ####################################################################################################################
 scols = ['Date', 'CustomerID', 'Category', 'ProductID', 'Amount', 'Price']
 sales = pd.DataFrame(columns=scols)
@@ -155,7 +176,6 @@ for i in range(1 + int((endda - begda).days)):
         num_visitor = int(num_visitor * (1 + weekend_ratio/100) * (0.4 * random.random() + 0.8))
     if curr_date in special_days:
         num_visitor = int(num_visitor * (1 + special_day_ratio/100) * (0.4 * random.random() + 0.8))
-    print(curr_date, num_visitor)
     daily_customer_list = numpy.random.choice(list(customer['CustomerID']), num_visitor, p=probability_list, replace=False)
     for j in daily_customer_list:
         preference_list = customer[customer['CustomerID'] == j][categories].values[0]
@@ -231,6 +251,14 @@ for i in range(1 + int((endda - begda).days)):
                     else:
                         average_price = last_price
                     product_demands[index]= (0.8 + 0.4 * random.random()) * value * ((average_price / last_price) ** products[products['ProductID'] == product_list[index]]['Elasticity'].values[0])
+                    product_trend = products[products['ProductID'] == product_list[index]]['Trend'].values[0]
+                    if product_trend != 0:
+                        product_demands[index] = product_demands[index] * (1 + ((curr_date - begda).days / 365) * (product_trend / 100))
+                    product_seasonality_beg = products[products['ProductID'] == product_list[index]]['BegSeason'].values[0]
+                    product_seasonality_end = products[products['ProductID'] == product_list[index]]['EndSeason'].values[0]
+                    product_seasonality_up = products[products['ProductID'] == product_list[index]]['Up'].values[0]
+                    if product_seasonality_beg != 0 and ((product_seasonality_beg <= curr_date.month <= product_seasonality_end) or (product_seasonality_beg <= 12 + curr_date.month <= product_seasonality_end)):
+                        product_demands[index] = product_demands[index] * product_seasonality_up / 100
                     demand_log[selected_category[0]] = product_demands
             s = sum(product_demands)
             product_probability = [c / s for c in product_demands]
