@@ -196,22 +196,24 @@ discount.to_excel('discount.xlsx')
 ####################################################################################################################
 # # # # # # # # # # #      Customers      # # # # # # # # # #
 # Each customer has a visit frequency, average basket size and different demands for each product categories
-# Frequency is the average duration between two visits
+# Frequency is the average duration in days between two visits (wd: weekday, we: weekend)
 # Volume (average basket size) is defined randomly, but also effected by visit frequency. Customers who visit
 #   the store less frequently tend to buy more items.
 ####################################################################################################################
-cols = ['CustomerID', 'Frequency', 'Volume'] + categories + ['S' + str(c) for c in list(stores['StoreID'])]
+cols = ['CustomerID', 'WdFrequency', 'WeFrequency', 'WdVolume', 'WeVolume'] + categories + ['S' + str(c) for c in list(stores['StoreID'])]
 customer = pd.DataFrame(columns=cols)
 for i in range(num_cust):
-    frequency = random.randint(min_visit_frequency, max_visit_frequency)
-    volume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * frequency / max_shopping_volume)
+    wdfrequency = random.randint(min_visit_frequency, max_visit_frequency)
+    wefrequency = random.randint(min_visit_frequency, max_visit_frequency)
+    wdvolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wdfrequency / max_shopping_volume)
+    wevolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wdfrequency / max_shopping_volume)
     cat_list = list()
     for j in categories:
         cat_list.append(random.random())
     store_list = list()
     for k in list(stores['StoreID']):
         store_list.append(stores[stores['StoreID'] == k]['Probability'].values[0] * random.random())
-    customer = pd.concat([customer, pd.DataFrame([[i, frequency, volume] + cat_list + store_list], columns=cols)],
+    customer = pd.concat([customer, pd.DataFrame([[i, wdfrequency, wefrequency, wdvolume, wevolume] + cat_list + store_list], columns=cols)],
                          ignore_index=True)
 customer.to_excel('customer.xlsx')
 
@@ -237,9 +239,12 @@ customer.to_excel('customer.xlsx')
 ####################################################################################################################
 cols = ['Date', 'Store', 'CustomerID', 'Category', 'ProductID', 'Amount', 'Price']
 sales = pd.DataFrame(columns=cols)
-clist = list(customer['Frequency'])
-s = sum(clist)
-probability_list = [c / s for c in clist]
+wdclist = list(customer['WdFrequency'])
+s = sum(wdclist)
+wd_probability_list = [c / s for c in wdclist]
+weclist = list(customer['WeFrequency'])
+s = sum(weclist)
+we_probability_list = [c / s for c in weclist]
 all_complements = list(complements['Complement'].values)
 for i in range(1 + int((endda - begda).days)):
     demand_log = dict()
@@ -248,6 +253,9 @@ for i in range(1 + int((endda - begda).days)):
     num_visitor = random.randint(int(average_daily_customers / 2), int(3 * average_daily_customers / 2))
     if curr_date.weekday() > 4:
         num_visitor = int(num_visitor * (1 + weekend_ratio / 100) * (0.4 * random.random() + 0.8))
+        probability_list = we_probability_list
+    else:
+        probability_list = wd_probability_list
     if curr_date in special_days:
         num_visitor = int(num_visitor * (1 + special_day_ratio / 100) * (0.4 * random.random() + 0.8))
     daily_customer_list = numpy.random.choice(list(customer['CustomerID']), num_visitor, p=probability_list,
@@ -261,7 +269,10 @@ for i in range(1 + int((endda - begda).days)):
         preference_list = customer[customer['CustomerID'] == j][categories].values[0]
         s = sum(preference_list)
         customer_probability = [c / s for c in preference_list]
-        average_volume = int(customer[customer['CustomerID'] == j]['Volume'])
+        if curr_date.weekday() > 4:
+            average_volume = int(customer[customer['CustomerID'] == j]['WeVolume'])
+        else:
+            average_volume = int(customer[customer['CustomerID'] == j]['WdVolume'])
         vol = random.randint(int(average_volume / 2), int(3 * average_volume / 2))
         basket = list()
         while vol > 0:
