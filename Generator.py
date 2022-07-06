@@ -7,15 +7,17 @@ from time import perf_counter
 
 start = perf_counter()
 
-begda = date(2022, 6, 1)                # Beginning date of the sales data
-endda = date(2022, 6, 30)               # End date of the sales data
-special_days = [date(2022, 6, 16)]      # Special dates such as Mother's Day, Christmas Eve, etc.
+read_or_generate = 0                    # 0: Read basic data, generate sales, 1: Generate everything
+max_sales = 1000000                     # Maximum number of generated sales data
+begda = date(2021, 1, 1)                # Beginning date of the sales data
+endda = date(2021, 3, 31)               # End date of the sales data
+special_days = []                       # Special dates such as Mother's Day, Christmas Eve, etc.
 num_stores = 3                          # Number of stores
-num_cat = 10                            # Number of product categories
-num_pro = 100                           # Number of products
-num_cust = 300                          # Number of customers
-num_trends = 10                         # Number of trending products
-num_season = 10                         # Number of seasonal products
+num_cat = 20                            # Number of product categories
+num_pro = 1500                          # Number of products
+num_cust = 5000                         # Number of customers
+num_trends = 100                        # Number of trending products
+num_season = 100                        # Number of seasonal products
 min_trends = -20                        # Minimum trend coefficient
 max_trends = 20                         # Maximum trend coefficient
 min_price = 1                           # Minimum product price
@@ -30,7 +32,7 @@ min_shopping_volume = 1                 # Minimum number of items in a customer'
 max_shopping_volume = 50                # Maximum number of items in each customer's basket
 min_season = 1                          # Minimum length of season in months
 max_season = 6                          # Maximum length of season in months
-average_daily_customers = 100           # Average number of daily customers
+average_daily_customers = 750           # Average number of daily customers
 weekend_ratio = 50                      # Rate of increase in number of visitors at weekends (%)
 special_day_ratio = 100                 # Rate of increase in number of visitors at special days (%)
 seasonality_ratio = 500                 # Maximum rate of increase in sales of seasonal products (%)
@@ -50,11 +52,16 @@ dif_complement = 20                     # Difference between the average effects
 # # # # # # # # # # #      Stores      # # # # # # # # # #
 # Probability indicates the customer's probability of visiting the store
 ####################################################################################################################
-cols = ['StoreID', 'Probability']
-stores = pd.DataFrame(columns=cols)
-for i in range(num_stores):
-    stores = pd.concat([stores, pd.DataFrame([[i, random.random()]], columns=cols)], ignore_index=True)
-stores.to_excel('stores.xlsx')
+def generate_stores(read_or_generate):
+    if read_or_generate == 1:
+        cols = ['StoreID', 'Probability']
+        stores = pd.DataFrame(columns=cols)
+        for i in range(num_stores):
+            stores = pd.concat([stores, pd.DataFrame([[i, random.random()]], columns=cols)], ignore_index=True)
+        stores.to_excel('stores.xlsx')
+    else:
+        stores = pd.read_excel('stores.xlsx')
+    return stores
 
 ####################################################################################################################
 # # # # # # # # # # #      Product Categories and Products      # # # # # # # # # #
@@ -64,28 +71,33 @@ stores.to_excel('stores.xlsx')
 # If the product is a seasonal product, BegSeason is the beginning of the season, and EndSeason is the end of it.
 #   Up is the rate that indicates how much the product is affected by seasonality.
 ####################################################################################################################
-categories = list(range(num_cat))
-cols = ['Category', 'ProductID', 'Price', 'Demand', 'Elasticity', 'Trend', 'BegSeason', 'EndSeason', 'Up']
-products = pd.DataFrame(columns=cols)
-for i in range(num_pro):
-    price = random.randint(min_price, max_price)
-    demand_rate = random.random()
-    elasticity = 2 * random.random() + 1
-    trend_coefficient = 0
-    if random.random() < (num_trends / num_pro):
-        trend_coefficient = random.uniform(min_trends, max_trends)
-    beg_season = 0
-    end_season = 0
-    up = 0
-    if random.random() < (num_season / num_pro):
-        beg_season = np.random.choice(list(range(1, 13)), 1, replace=False)[0]
-        end_season = beg_season + numpy.random.choice(list(range(min_season - 1, max_season)), 1, replace=False)[0]
-        up = random.uniform(100, seasonality_ratio)
-    products = pd.concat([products, pd.DataFrame([[random.choice(categories), i, price, demand_rate, elasticity, \
-                                                   trend_coefficient, beg_season, end_season, up]], columns=cols)],
-                         ignore_index=True)
-products = products.sort_values(by=['Category', 'ProductID'])
-products.to_excel('products.xlsx')
+def generate_products(read_or_generate):
+    categories = list(range(num_cat))
+    if read_or_generate == 1:
+        cols = ['Category', 'ProductID', 'Price', 'Demand', 'Elasticity', 'Trend', 'BegSeason', 'EndSeason', 'Up']
+        products = pd.DataFrame(columns=cols)
+        for i in range(num_pro):
+            price = random.randint(min_price, max_price)
+            demand_rate = random.random()
+            elasticity = 2 * random.random() + 1
+            trend_coefficient = 0
+            if random.random() < (num_trends / num_pro):
+                trend_coefficient = random.uniform(min_trends, max_trends)
+            beg_season = 0
+            end_season = 0
+            up = 0
+            if random.random() < (num_season / num_pro):
+                beg_season = np.random.choice(list(range(1, 13)), 1, replace=False)[0]
+                end_season = beg_season + numpy.random.choice(list(range(min_season - 1, max_season)), 1, replace=False)[0]
+                up = random.uniform(100, seasonality_ratio)
+            products = pd.concat([products, pd.DataFrame([[random.choice(categories), i, price, demand_rate, elasticity, \
+                                                           trend_coefficient, beg_season, end_season, up]], columns=cols)],
+                                 ignore_index=True)
+        products = products.sort_values(by=['Category', 'ProductID'])
+        products.to_excel('products.xlsx')
+    else:
+        products = pd.read_excel('products.xlsx')
+    return categories, products
 
 ####################################################################################################################
 # # # # # # # # # # #      Product Substitutes      # # # # # # # # # #
@@ -96,29 +108,34 @@ products.to_excel('products.xlsx')
 #   strength are affected more negatively when their substitutes are in promotion.
 #
 ####################################################################################################################
-cols = ['Category', 'ProductID', 'Substitute', 'Strength']
-substitutes = pd.DataFrame(columns=cols)
-for i in range(num_pro):
-    if random.random() < (substitute_ratio / num_pro):
-        category = products[products['ProductID'] == i]['Category'].values[0]
-        product_list = list(products[products['Category'] == category]['ProductID'].values)
-        stop = 2
-        while stop >= 1:
-            substitute = i
-            while substitute == i:
-                substitute = np.random.choice(product_list, 1, replace=False)[0]
-            product_list.remove(substitute)
-            strength = np.random.choice(list(range(num_substitution)), 1, replace=False)[0]
-            strength = min_substitution + dif_substitution * strength
-            substitutes = pd.concat([substitutes, pd.DataFrame([[category, i, substitute,
-                                                                 random.uniform(strength - (dif_substitution / 2),
-                                                                                strength + (dif_substitution / 2))]],
-                                                               columns=cols)], ignore_index=True)
-            if random.random() < 1 / stop:
-                stop *= 2
-            else:
-                stop = 0
-substitutes.to_excel('substitutes.xlsx')
+def generate_substitutes(read_or_generate, products):
+    if read_or_generate == 1:
+        cols = ['Category', 'ProductID', 'Substitute', 'Strength']
+        substitutes = pd.DataFrame(columns=cols)
+        for i in range(num_pro):
+            if random.random() < (substitute_ratio / num_pro):
+                category = products[products['ProductID'] == i]['Category'].values[0]
+                product_list = list(products[products['Category'] == category]['ProductID'].values)
+                stop = 2
+                while stop >= 1:
+                    substitute = i
+                    while substitute == i:
+                        substitute = np.random.choice(product_list, 1, replace=False)[0]
+                    product_list.remove(substitute)
+                    strength = np.random.choice(list(range(num_substitution)), 1, replace=False)[0]
+                    strength = min_substitution + dif_substitution * strength
+                    substitutes = pd.concat([substitutes, pd.DataFrame([[category, i, substitute,
+                                                                         random.uniform(strength - (dif_substitution / 2),
+                                                                                        strength + (dif_substitution / 2))]],
+                                                                       columns=cols)], ignore_index=True)
+                    if random.random() < 1 / stop:
+                        stop *= 2
+                    else:
+                        stop = 0
+        substitutes.to_excel('substitutes.xlsx')
+    else:
+        substitutes = pd.read_excel('substitutes.xlsx')
+    return substitutes
 
 ####################################################################################################################
 # # # # # # # # # # #      Complementary Products       # # # # # # # # # #
@@ -127,25 +144,30 @@ substitutes.to_excel('substitutes.xlsx')
 #   with higher strength are affected more when their complementary products are added to the basket.
 #
 ####################################################################################################################
-cols = ['Category', 'ProductID', 'Complement', 'Strength']
-complements = pd.DataFrame(columns=cols)
-product_list = list(products['ProductID'].values)
-for i in range(num_pro):
-    if random.random() < (complementary_ratio / num_pro):
-        complement = i
-        while complement == i:
-            complement = np.random.choice(product_list, 1, replace=False)[0]
-        category = products[products['ProductID'] == i]['Category'].values[0]
-        strength = np.random.choice(list(range(num_complement)), 1, replace=False)[0]
-        strength = min_complement + dif_complement * strength
-        complements = pd.concat([complements, pd.DataFrame([[category, i, complement,
-                                                             random.uniform(strength - (dif_complement / 2),
-                                                                            strength + (dif_complement / 2))]],
-                                                           columns=cols)], ignore_index=True)
-complements.to_excel('complements.xlsx')
+def generate_complements(read_or_generate, products):
+    if read_or_generate == 1:
+        cols = ['Category', 'ProductID', 'Complement', 'Strength']
+        complements = pd.DataFrame(columns=cols)
+        product_list = list(products['ProductID'].values)
+        for i in range(num_pro):
+            if random.random() < (complementary_ratio / num_pro):
+                complement = i
+                while complement == i:
+                    complement = np.random.choice(product_list, 1, replace=False)[0]
+                category = products[products['ProductID'] == i]['Category'].values[0]
+                strength = np.random.choice(list(range(num_complement)), 1, replace=False)[0]
+                strength = min_complement + dif_complement * strength
+                complements = pd.concat([complements, pd.DataFrame([[category, i, complement,
+                                                                     random.uniform(strength - (dif_complement / 2),
+                                                                                    strength + (dif_complement / 2))]],
+                                                                   columns=cols)], ignore_index=True)
+        complements.to_excel('complements.xlsx')
+    else:
+        complements = pd.read_excel('complements.xlsx')
+    return complements
 
 ####################################################################################################################
-# # # # # # # # # # #      Effect of Inflation on Product Prices      # # # # # # # # # #
+# # # # # # # # # # #      Inflation      # # # # # # # # # #
 # Under the effect of inflation, the price of some products will increase at various times during the year
 # beg_change is the date of price change, defined randomly.
 # There will be 1 increase per product per year on the average (the prices of some products may remain the same,
@@ -153,45 +175,55 @@ complements.to_excel('complements.xlsx')
 # Increase rate is between 0 and (2 * yearly inflation rate), so the average increase rate will be approximately
 #   equal to the yearly inflation rate.
 ####################################################################################################################
-cols = ['ProductID', 'Beg', 'PrevPrice', 'NewPrice']
-inflation = pd.DataFrame(columns=cols)
-for i in range(int(num_pro * (int((endda - begda).days)) / 365)):
-    product_id = random.choice(list(range(num_pro)))
-    beg_change = begda + timedelta(days=random.randint(0, int((endda - begda).days)))
-    increase = 2 * yearly_inflation_rate * random.random()
-    try:
-        old_price = inflation[inflation['ProductID'] == product_id]['NewPrice'].values[-1]
-    except:
-        old_price = products[products['ProductID'] == product_id]['Price'].values[-1]
-    new_price = round((1 + increase / 100) * old_price, 2)
-    inflation = pd.concat([inflation, pd.DataFrame([[product_id, beg_change, old_price, new_price]], columns=cols)],
-                          ignore_index=True)
-inflation.to_excel('inflation.xlsx')
+def generate_inflation(read_or_generate, products):
+    if read_or_generate == 1:
+        cols = ['ProductID', 'Beg', 'PrevPrice', 'NewPrice']
+        inflation = pd.DataFrame(columns=cols)
+        for i in range(int(num_pro * (int((endda - begda).days)) / 365)):
+            product_id = random.choice(list(range(num_pro)))
+            beg_change = begda + timedelta(days=random.randint(0, int((endda - begda).days)))
+            increase = 2 * yearly_inflation_rate * random.random()
+            try:
+                old_price = inflation[inflation['ProductID'] == product_id]['NewPrice'].values[-1]
+            except:
+                old_price = products[products['ProductID'] == product_id]['Price'].values[-1]
+            new_price = round((1 + increase / 100) * old_price, 2)
+            inflation = pd.concat([inflation, pd.DataFrame([[product_id, beg_change, old_price, new_price]], columns=cols)],
+                                  ignore_index=True)
+        inflation.to_excel('inflation.xlsx')
+    else:
+        inflation = pd.read_excel('inflation.xlsx')
+    return inflation
 
 ####################################################################################################################
-# # # # # # # # # # #      Effect of Promotions on Product Prices      # # # # # # # # # #
+# # # # # # # # # # #      Promotions      # # # # # # # # # #
 # Promoted products are defined randomly considering promotion_rate (Number of simultaneous promotions)
 # Promotion durations are defined randomly between min and max duration lengths
 # Discount rates are defined randomly between min and max discount rates
 ####################################################################################################################
-cols = ['ProductID', 'Beg', 'End', 'PrevPrice', 'NewPrice']
-discount = pd.DataFrame(columns=cols)
-for i in range(0, int((endda - begda).days) + 1):
-    for j in range(num_pro):
-        if random.random() <= (2 * promotion_rate) / (100 * (min_prom_len_days + max_prom_len_days)):
-            promotion_duration = random.randint(min_prom_len_days, max_prom_len_days)
-            discount_ratio = random.randint(min_prom_discount, max_prom_discount)
-            try:
-                old_price = inflation[(inflation['ProductID'] == j) & (inflation['Beg'] <= begda + timedelta(days=i))][
-                    'NewPrice'].values[-1]
-            except:
-                old_price = products[products['ProductID'] == j]['Price'].values[-1]
-            new_price = round(old_price * (1 - discount_ratio / 100), 2)
-            discount = pd.concat([discount, pd.DataFrame(
-                [[j, begda + timedelta(days=i), begda + timedelta(days=i + promotion_duration), old_price, new_price]],
-                columns=cols)],
-                                 ignore_index=True)
-discount.to_excel('discount.xlsx')
+def generate_promotions(read_or_generate, products, inflation):
+    if read_or_generate == 1:
+        cols = ['ProductID', 'Beg', 'End', 'PrevPrice', 'NewPrice']
+        discount = pd.DataFrame(columns=cols)
+        for i in range(0, int((endda - begda).days) + 1):
+            for j in range(num_pro):
+                if random.random() <= (2 * promotion_rate) / (100 * (min_prom_len_days + max_prom_len_days)):
+                    promotion_duration = random.randint(min_prom_len_days, max_prom_len_days)
+                    discount_ratio = random.randint(min_prom_discount, max_prom_discount)
+                    try:
+                        old_price = inflation[(inflation['ProductID'] == j) & (inflation['Beg'] <= begda + timedelta(days=i))][
+                            'NewPrice'].values[-1]
+                    except:
+                        old_price = products[products['ProductID'] == j]['Price'].values[-1]
+                    new_price = round(old_price * (1 - discount_ratio / 100), 2)
+                    discount = pd.concat([discount, pd.DataFrame(
+                        [[j, begda + timedelta(days=i), begda + timedelta(days=i + promotion_duration), old_price, new_price]],
+                        columns=cols)],
+                                         ignore_index=True)
+        discount.to_excel('discount.xlsx')
+    else:
+        discount = pd.read_excel('discount.xlsx')
+    return discount
 
 ####################################################################################################################
 # # # # # # # # # # #      Customers      # # # # # # # # # #
@@ -200,22 +232,27 @@ discount.to_excel('discount.xlsx')
 # Volume (average basket size) is defined randomly, but also effected by visit frequency. Customers who visit
 #   the store less frequently tend to buy more items.
 ####################################################################################################################
-cols = ['CustomerID', 'WdFrequency', 'WeFrequency', 'WdVolume', 'WeVolume'] + categories + ['S' + str(c) for c in list(stores['StoreID'])]
-customer = pd.DataFrame(columns=cols)
-for i in range(num_cust):
-    wdfrequency = random.randint(min_visit_frequency, max_visit_frequency)
-    wefrequency = random.randint(min_visit_frequency, max_visit_frequency)
-    wdvolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wdfrequency / max_shopping_volume)
-    wevolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wdfrequency / max_shopping_volume)
-    cat_list = list()
-    for j in categories:
-        cat_list.append(random.random())
-    store_list = list()
-    for k in list(stores['StoreID']):
-        store_list.append(stores[stores['StoreID'] == k]['Probability'].values[0] * random.random())
-    customer = pd.concat([customer, pd.DataFrame([[i, wdfrequency, wefrequency, wdvolume, wevolume] + cat_list + store_list], columns=cols)],
-                         ignore_index=True)
-customer.to_excel('customer.xlsx')
+def generate_customers(read_or_generate, categories, stores):
+    if read_or_generate == 1:
+        cols = ['CustomerID', 'WdFrequency', 'WeFrequency', 'WdVolume', 'WeVolume'] + categories + ['S' + str(c) for c in list(stores['StoreID'])]
+        customer = pd.DataFrame(columns=cols)
+        for i in range(num_cust):
+            wdfrequency = random.randint(min_visit_frequency, max_visit_frequency)
+            wefrequency = random.randint(min_visit_frequency, max_visit_frequency)
+            wdvolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wdfrequency / max_shopping_volume)
+            wevolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wefrequency / max_shopping_volume)
+            cat_list = list()
+            for j in categories:
+                cat_list.append(random.random())
+            store_list = list()
+            for k in list(stores['StoreID']):
+                store_list.append(stores[stores['StoreID'] == k]['Probability'].values[0] * random.random())
+            customer = pd.concat([customer, pd.DataFrame([[i, wdfrequency, wefrequency, wdvolume, wevolume] + cat_list + store_list], columns=cols)],
+                                 ignore_index=True)
+        customer.to_excel('customer.xlsx')
+    else:
+        customer = pd.read_excel('customer.xlsx')
+    return customer
 
 ####################################################################################################################
 # # # # # # # # # # #      Sales Data      # # # # # # # # # #
@@ -237,8 +274,17 @@ customer.to_excel('customer.xlsx')
 # 11- The number of pieces of selected product is defined randomly and added to customer basket
 # 12 - The increase in sales of promoted products will partially increase total sales
 ####################################################################################################################
+stores = generate_stores(read_or_generate)
+categories, products = generate_products(read_or_generate)
+substitutes = generate_substitutes(read_or_generate, products)
+complements = generate_complements(read_or_generate, products)
+inflation = generate_inflation(read_or_generate, products)
+discount = generate_promotions(read_or_generate, products, inflation)
+customer = generate_customers(read_or_generate, categories, stores)
+
 cols = ['Date', 'Store', 'CustomerID', 'Category', 'ProductID', 'Amount', 'Price']
 sales = pd.DataFrame(columns=cols)
+sales_count = 0
 wdclist = list(customer['WdFrequency'])
 s = sum(wdclist)
 wd_probability_list = [c / s for c in wdclist]
@@ -247,6 +293,8 @@ s = sum(weclist)
 we_probability_list = [c / s for c in weclist]
 all_complements = list(complements['Complement'].values)
 for i in range(1 + int((endda - begda).days)):
+    if max_sales <= sales_count:
+        break
     demand_log = dict()
     price_log = dict()
     curr_date = begda + timedelta(days=i)
@@ -261,6 +309,8 @@ for i in range(1 + int((endda - begda).days)):
     daily_customer_list = numpy.random.choice(list(customer['CustomerID']), num_visitor, p=probability_list,
                                               replace=False)
     for j in daily_customer_list:
+        if max_sales <= sales_count:
+            break
         store_preferences = customer[customer['CustomerID'] == j][
             ['S' + str(c) for c in list(stores['StoreID'])]].values
         s = sum(store_preferences[0])
@@ -275,7 +325,7 @@ for i in range(1 + int((endda - begda).days)):
             average_volume = int(customer[customer['CustomerID'] == j]['WdVolume'])
         vol = random.randint(int(average_volume / 2), int(3 * average_volume / 2))
         basket = list()
-        while vol > 0:
+        while vol > 0 and max_sales > sales_count:
             selected_category = numpy.random.choice(categories, 1, p=customer_probability, replace=False)
             product_list = products[products['Category'] == selected_category[0]]['ProductID'].values
             product_demands = products[products['Category'] == selected_category[0]]['Demand'].values
@@ -308,7 +358,7 @@ for i in range(1 + int((endda - begda).days)):
                         inf_new_pri = inflation[(inflation['ProductID'] == product_list[index]) & (
                                     inflation['Beg'] >= curr_date - timedelta(days=pricing_period))]['NewPrice'].values
                     except:
-                        pass
+                        inf_beg = list()
                     for k in range(len(inf_beg)):
                         price_changes = pd.concat([price_changes,
                                                    pd.DataFrame([[inf_beg[k], 0, inf_pre_pri[k], inf_new_pri[k]]],
@@ -329,7 +379,7 @@ for i in range(1 + int((endda - begda).days)):
                                         discount['End'] >= curr_date - timedelta(days=pricing_period))][
                             'NewPrice'].values
                     except:
-                        pass
+                        dis_beg = list()
                     for k in range(len(dis_beg)):
                         price_changes = pd.concat([price_changes, pd.DataFrame(
                             [[dis_beg[k], dis_end[k], dis_pre_pri[k], dis_new_pri[k]]], columns=pcols)],
@@ -385,8 +435,8 @@ for i in range(1 + int((endda - begda).days)):
                     substitute_list = substitutes[substitutes['ProductID'] == product_list[index]]['Substitute'].values
                     strength_list = substitutes[substitutes['ProductID'] == product_list[index]]['Strength'].values
                     for subindex, subvalue in enumerate(substitute_list):
-                        if len(discount[(discount['ProductID'] == subvalue) & (discount['Beg'] <= curr_date) & (
-                                discount['End'] >= curr_date)]['Beg'].values) >= 1:
+                        if len(discount[(discount['ProductID'] == subvalue) & (discount['Beg'].dt.date <= curr_date) & (
+                                discount['End'].dt.date >= curr_date)]['Beg'].values) >= 1:
                             product_demands[index] = product_demands[index] * (1 - (strength_list[subindex] / 100))
                     complement_list = complements[complements['ProductID'] == product_list[index]]['Complement'].values
                     strength_list = complements[complements['ProductID'] == product_list[index]]['Strength'].values
@@ -411,6 +461,7 @@ for i in range(1 + int((endda - begda).days)):
                                                      selected_product[0], amount[0], price_log[selected_product[0]]]],
                                                    columns=cols)],
                               ignore_index=True)
+            sales_count += 1
             basket.append(selected_product[0])
             if selected_product[0] in all_complements:
                 p = complements[complements['Complement'] == selected_product[0]]['ProductID'].values[0]
@@ -427,6 +478,8 @@ for i in range(1 + int((endda - begda).days)):
                 pass
             else:
                 vol -= 1
+            if sales_count % (max_sales//100) == 0:
+                print(curr_date, sales_count/(max_sales//100), perf_counter() - start)
 sales.to_excel('sales.xlsx')
 stop = perf_counter()
 print(stop - start)
