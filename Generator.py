@@ -10,8 +10,11 @@ start = perf_counter()
 read_or_generate = 0                    # 0: Read basic data, generate sales, 1: Generate everything
 max_sales = 1000000                     # Maximum number of generated sales data
 begda = date(2021, 1, 1)                # Beginning date of the sales data
-endda = date(2021, 3, 31)               # End date of the sales data
-special_days = []                       # Special dates such as Mother's Day, Christmas Eve, etc.
+endda = date(2021, 6, 30)               # End date of the sales data
+special_days = [date(2021, 5, 9),
+                date(2021, 4, 23),
+                date(2021, 5, 19),
+                date(2021, 6, 20)]      # Special dates such as Mother's Day, Christmas Eve, etc.
 num_stores = 3                          # Number of stores
 num_cat = 20                            # Number of product categories
 num_pro = 1500                          # Number of products
@@ -191,6 +194,7 @@ def generate_inflation(read_or_generate, products):
             inflation = pd.concat([inflation, pd.DataFrame([[product_id, beg_change, old_price, new_price]], columns=cols)],
                                   ignore_index=True)
         inflation.to_excel('inflation.xlsx')
+        inflation['Beg'] = pd.to_datetime(inflation['Beg'], utc=True)
     else:
         inflation = pd.read_excel('inflation.xlsx')
     return inflation
@@ -211,7 +215,7 @@ def generate_promotions(read_or_generate, products, inflation):
                     promotion_duration = random.randint(min_prom_len_days, max_prom_len_days)
                     discount_ratio = random.randint(min_prom_discount, max_prom_discount)
                     try:
-                        old_price = inflation[(inflation['ProductID'] == j) & (inflation['Beg'] <= begda + timedelta(days=i))][
+                        old_price = inflation[(inflation['ProductID'] == j) & (inflation['Beg'].dt.date <= begda + timedelta(days=i))][
                             'NewPrice'].values[-1]
                     except:
                         old_price = products[products['ProductID'] == j]['Price'].values[-1]
@@ -221,6 +225,8 @@ def generate_promotions(read_or_generate, products, inflation):
                         columns=cols)],
                                          ignore_index=True)
         discount.to_excel('discount.xlsx')
+        discount['Beg'] = pd.to_datetime(discount['Beg'], utc=True)
+        discount['End'] = pd.to_datetime(discount['End'], utc=True)
     else:
         discount = pd.read_excel('discount.xlsx')
     return discount
@@ -282,7 +288,7 @@ inflation = generate_inflation(read_or_generate, products)
 discount = generate_promotions(read_or_generate, products, inflation)
 customer = generate_customers(read_or_generate, categories, stores)
 
-cols = ['Date', 'Store', 'CustomerID', 'Category', 'ProductID', 'Amount', 'Price']
+cols = ['Date', 'Store', 'InvoiceID', 'CustomerID', 'Category', 'ProductID', 'Amount', 'Price']
 sales = pd.DataFrame(columns=cols)
 sales_count = 0
 wdclist = list(customer['WdFrequency'])
@@ -298,6 +304,8 @@ for i in range(1 + int((endda - begda).days)):
     demand_log = dict()
     price_log = dict()
     curr_date = begda + timedelta(days=i)
+    invoice_prefix = str(curr_date.year) + str(curr_date.month) + str(curr_date.day)
+    invoice_count = 0
     num_visitor = random.randint(int(average_daily_customers / 2), int(3 * average_daily_customers / 2))
     if curr_date.weekday() > 4:
         num_visitor = int(num_visitor * (1 + weekend_ratio / 100) * (0.4 * random.random() + 0.8))
@@ -311,6 +319,8 @@ for i in range(1 + int((endda - begda).days)):
     for j in daily_customer_list:
         if max_sales <= sales_count:
             break
+        invoice_count += 1
+        invoice_id = invoice_prefix + str(invoice_count)
         store_preferences = customer[customer['CustomerID'] == j][
             ['S' + str(c) for c in list(stores['StoreID'])]].values
         s = sum(store_preferences[0])
@@ -336,14 +346,14 @@ for i in range(1 + int((endda - begda).days)):
                     price = products[products['ProductID'] == product_list[index]]['Price'].values
                     try:
                         last_price = \
-                        inflation[(inflation['ProductID'] == product_list[index]) & (inflation['Beg'] <= curr_date)][
+                        inflation[(inflation['ProductID'] == product_list[index]) & (inflation['Beg'].dt.date <= curr_date)][
                             'NewPrice'].values[-1]
                     except:
                         last_price = price[0]
                     try:
                         last_price = discount[
-                            (discount['ProductID'] == product_list[index]) & (discount['Beg'] <= curr_date) & (
-                                        discount['End'] >= curr_date)]['NewPrice'].values[-1]
+                            (discount['ProductID'] == product_list[index]) & (discount['Beg'].dt.date <= curr_date) & (
+                                        discount['End'].dt.date >= curr_date)]['NewPrice'].values[-1]
                     except:
                         pass
                     price_log[product_list[index]] = last_price
@@ -352,11 +362,11 @@ for i in range(1 + int((endda - begda).days)):
                     price_changes = pd.DataFrame(columns=pcols)
                     try:
                         inf_beg = inflation[(inflation['ProductID'] == product_list[index]) & (
-                                    inflation['Beg'] >= curr_date - timedelta(days=pricing_period))]['Beg'].values
+                                    inflation['Beg'].dt.date >= curr_date - timedelta(days=pricing_period))]['Beg'].values
                         inf_pre_pri = inflation[(inflation['ProductID'] == product_list[index]) & (
-                                    inflation['Beg'] >= curr_date - timedelta(days=pricing_period))]['PrevPrice'].values
+                                    inflation['Beg'].dt.date >= curr_date - timedelta(days=pricing_period))]['PrevPrice'].values
                         inf_new_pri = inflation[(inflation['ProductID'] == product_list[index]) & (
-                                    inflation['Beg'] >= curr_date - timedelta(days=pricing_period))]['NewPrice'].values
+                                    inflation['Beg'].dt.date >= curr_date - timedelta(days=pricing_period))]['NewPrice'].values
                     except:
                         inf_beg = list()
                     for k in range(len(inf_beg)):
@@ -365,18 +375,18 @@ for i in range(1 + int((endda - begda).days)):
                                                                 columns=pcols)], ignore_index=True)
                     try:
                         dis_beg = discount[
-                            (discount['ProductID'] == product_list[index]) & (discount['Beg'] <= curr_date) & (
-                                        discount['End'] >= curr_date - timedelta(days=pricing_period))]['Beg'].values
+                            (discount['ProductID'] == product_list[index]) & (discount['Beg'].dt.date <= curr_date) & (
+                                        discount['End'].dt.date >= curr_date - timedelta(days=pricing_period))]['Beg'].values
                         dis_end = discount[
-                            (discount['ProductID'] == product_list[index]) & (discount['Beg'] <= curr_date) & (
-                                        discount['End'] >= curr_date - timedelta(days=pricing_period))]['End'].values
+                            (discount['ProductID'] == product_list[index]) & (discount['Beg'].dt.date <= curr_date) & (
+                                        discount['End'].dt.date >= curr_date - timedelta(days=pricing_period))]['End'].values
                         dis_pre_pri = discount[
-                            (discount['ProductID'] == product_list[index]) & (discount['Beg'] <= curr_date) & (
-                                        discount['End'] >= curr_date - timedelta(days=pricing_period))][
+                            (discount['ProductID'] == product_list[index]) & (discount['Beg'].dt.date <= curr_date) & (
+                                        discount['End'].dt.date >= curr_date - timedelta(days=pricing_period))][
                             'PrevPrice'].values
                         dis_new_pri = discount[
-                            (discount['ProductID'] == product_list[index]) & (discount['Beg'] <= curr_date) & (
-                                        discount['End'] >= curr_date - timedelta(days=pricing_period))][
+                            (discount['ProductID'] == product_list[index]) & (discount['Beg'].dt.date <= curr_date) & (
+                                        discount['End'].dt.date >= curr_date - timedelta(days=pricing_period))][
                             'NewPrice'].values
                     except:
                         dis_beg = list()
@@ -390,25 +400,25 @@ for i in range(1 + int((endda - begda).days)):
                             for d, val in enumerate(all_price):
                                 if row['End'] == 0:
                                     if all_price[d] == 0:
-                                        if row['Beg'] > curr_date - timedelta(days=pricing_period - d):
+                                        if row['Beg'] > pd.Timestamp(curr_date - timedelta(days=pricing_period - d)):
                                             all_price[d] = row['PrevPrice']
                                         else:
                                             all_price[d] = row['NewPrice']
                                     else:
-                                        if row['Beg'] > curr_date - timedelta(days=pricing_period - d):
+                                        if row['Beg'] > pd.Timestamp(curr_date - timedelta(days=pricing_period - d)):
                                             pass
                                         else:
                                             all_price[d] = row['NewPrice']
                                 else:
                                     if all_price[d] == 0:
-                                        if row['Beg'] > curr_date - timedelta(days=pricing_period - d) or row[
-                                            'End'] < curr_date - timedelta(days=pricing_period - d):
+                                        if row['Beg'] > pd.Timestamp(curr_date - timedelta(days=pricing_period - d)) or row[
+                                            'End'] < pd.Timestamp(curr_date - timedelta(days=pricing_period - d)):
                                             all_price[d] = row['PrevPrice']
                                         else:
                                             all_price[d] = row['NewPrice']
                                     else:
-                                        if row['Beg'] > curr_date - timedelta(days=pricing_period - d) or row[
-                                            'End'] < curr_date - timedelta(days=pricing_period - d):
+                                        if row['Beg'] > pd.Timestamp(curr_date - timedelta(days=pricing_period - d)) or row[
+                                            'End'] < pd.Timestamp(curr_date - timedelta(days=pricing_period - d)):
                                             pass
                                         else:
                                             all_price[d] = row['NewPrice']
@@ -435,8 +445,8 @@ for i in range(1 + int((endda - begda).days)):
                     substitute_list = substitutes[substitutes['ProductID'] == product_list[index]]['Substitute'].values
                     strength_list = substitutes[substitutes['ProductID'] == product_list[index]]['Strength'].values
                     for subindex, subvalue in enumerate(substitute_list):
-                        if len(discount[(discount['ProductID'] == subvalue) & (discount['Beg'].dt.date <= curr_date) & (
-                                discount['End'].dt.date >= curr_date)]['Beg'].values) >= 1:
+                        if len(discount[(discount['ProductID'] == subvalue) & (discount['Beg'].dt.date <= curr_date) & (discount['End'].dt.date >= curr_date)]['Beg'].values) >= 1:
+                      #  if len(discount[(discount['ProductID'] == subvalue) & (discount['Beg'] <= curr_date) & (discount['End'] >= curr_date)]['Beg'].values) >= 1:
                             product_demands[index] = product_demands[index] * (1 - (strength_list[subindex] / 100))
                     complement_list = complements[complements['ProductID'] == product_list[index]]['Complement'].values
                     strength_list = complements[complements['ProductID'] == product_list[index]]['Strength'].values
@@ -457,7 +467,7 @@ for i in range(1 + int((endda - begda).days)):
             s = sum(amount_preferences)
             amount_probability = [c / s for c in amount_preferences]
             amount = numpy.random.choice(list(range(1, 6)), 1, p=amount_probability, replace=False)
-            sales = pd.concat([sales, pd.DataFrame([[curr_date, selected_store[0], j, selected_category[0],
+            sales = pd.concat([sales, pd.DataFrame([[curr_date, selected_store[0], invoice_id, j, selected_category[0],
                                                      selected_product[0], amount[0], price_log[selected_product[0]]]],
                                                    columns=cols)],
                               ignore_index=True)
@@ -480,6 +490,7 @@ for i in range(1 + int((endda - begda).days)):
                 vol -= 1
             if sales_count % (max_sales//100) == 0:
                 print(curr_date, sales_count/(max_sales//100), perf_counter() - start)
+                sales.to_excel('sales.xlsx')
 sales.to_excel('sales.xlsx')
 stop = perf_counter()
 print(stop - start)
