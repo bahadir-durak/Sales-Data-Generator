@@ -9,9 +9,10 @@ start = perf_counter()
 
 read_or_generate = 0                    # 0: Read basic data, generate sales, 1: Generate everything
 max_sales = 1000000                     # Maximum number of generated sales data
-begda = date(2021, 1, 1)                # Beginning date of the sales data
+begda = date(2021, 6, 11)                # Beginning date of the sales data
 endda = date(2021, 6, 30)               # End date of the sales data
-special_days = [date(2021, 5, 9),
+special_days = [date(2021, 3, 8),
+                date(2021, 5, 9),
                 date(2021, 4, 23),
                 date(2021, 5, 19),
                 date(2021, 6, 20)]      # Special dates such as Mother's Day, Christmas Eve, etc.
@@ -23,7 +24,7 @@ num_trends = 100                        # Number of trending products
 num_season = 100                        # Number of seasonal products
 min_trends = -20                        # Minimum trend coefficient
 max_trends = 20                         # Maximum trend coefficient
-min_price = 1                           # Minimum product price
+min_price = 2                           # Minimum product price
 max_price = 100                         # Maximum product price
 min_prom_len_days = 2                   # Minimum promotion duration in days
 max_prom_len_days = 14                  # Maximum promotion duration in days
@@ -67,20 +68,42 @@ def generate_stores(read_or_generate):
     return stores
 
 ####################################################################################################################
-# # # # # # # # # # #      Product Categories and Products      # # # # # # # # # #
+# # # # # # # # # # #      Product Categories      # # # # # # # # # #
+# Demand rates of categories are changing slightly during the year
+# Each category has a price level
+####################################################################################################################
+def generate_categories(read_or_generate):
+    if read_or_generate == 1:
+        cols = ['Category', '1', '2', '3', '4', '5', '6', '7', '8','9','10','11','12','Price_Level']
+        categories = pd.DataFrame(columns=cols)
+        for i in range(0, num_cat):
+            pc = 0.2 + 0.8 * random.random()
+            rc = 0.2 + 0.3 * random.random()
+            pcj = list()
+            for j in range(0,12):
+                pcj.append((pc * (1 - rc)) + 2 * pc * rc * random.random())
+            price_level = 0.5 + 2.5 * random.random()
+            categories = pd.concat([categories, pd.DataFrame([[i, *pcj, price_level]], columns=cols)], ignore_index=True)
+            categories.to_excel('categories.xlsx')
+    else:
+        categories = pd.read_excel('categories.xlsx')
+    return categories
+
+####################################################################################################################
+# # # # # # # # # # #      Products      # # # # # # # # # #
 # Demand rates are relative sales potentials of each product within the category
 # Elasticity is the demand sensitivity of products against price changes
 # There can be positive or negative demand
 # If the product is a seasonal product, BegSeason is the beginning of the season, and EndSeason is the end of it.
 #   Up is the rate that indicates how much the product is affected by seasonality.
 ####################################################################################################################
-def generate_products(read_or_generate):
-    categories = list(range(num_cat))
+def generate_products(read_or_generate, categories):
     if read_or_generate == 1:
         cols = ['Category', 'ProductID', 'Price', 'Demand', 'Elasticity', 'Trend', 'BegSeason', 'EndSeason', 'Up']
         products = pd.DataFrame(columns=cols)
         for i in range(num_pro):
-            price = random.randint(min_price, max_price)
+            category = random.choice(categories['Category'])
+            price = int(random.randint(min_price, max_price) * categories[categories['Category'] == category ]['Price_Level'])
             demand_rate = random.random()
             elasticity = 2 * random.random() + 1
             trend_coefficient = 0
@@ -93,14 +116,14 @@ def generate_products(read_or_generate):
                 beg_season = np.random.choice(list(range(1, 13)), 1, replace=False)[0]
                 end_season = beg_season + numpy.random.choice(list(range(min_season - 1, max_season)), 1, replace=False)[0]
                 up = random.uniform(100, seasonality_ratio)
-            products = pd.concat([products, pd.DataFrame([[random.choice(categories), i, price, demand_rate, elasticity, \
+            products = pd.concat([products, pd.DataFrame([[category, i, price, demand_rate, elasticity, \
                                                            trend_coefficient, beg_season, end_season, up]], columns=cols)],
                                  ignore_index=True)
         products = products.sort_values(by=['Category', 'ProductID'])
         products.to_excel('products.xlsx')
     else:
         products = pd.read_excel('products.xlsx')
-    return categories, products
+    return products
 
 ####################################################################################################################
 # # # # # # # # # # #      Product Substitutes      # # # # # # # # # #
@@ -240,7 +263,7 @@ def generate_promotions(read_or_generate, products, inflation):
 ####################################################################################################################
 def generate_customers(read_or_generate, categories, stores):
     if read_or_generate == 1:
-        cols = ['CustomerID', 'WdFrequency', 'WeFrequency', 'WdVolume', 'WeVolume'] + categories + ['S' + str(c) for c in list(stores['StoreID'])]
+        cols = ['CustomerID', 'WdFrequency', 'WeFrequency', 'WdVolume', 'WeVolume'] + list(categories['Category']) + ['S' + str(c) for c in list(stores['StoreID'])]
         customer = pd.DataFrame(columns=cols)
         for i in range(num_cust):
             wdfrequency = random.randint(min_visit_frequency, max_visit_frequency)
@@ -248,7 +271,7 @@ def generate_customers(read_or_generate, categories, stores):
             wdvolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wdfrequency / max_shopping_volume)
             wevolume = np.ceil(random.randint(min_shopping_volume, max_shopping_volume) * wefrequency / max_shopping_volume)
             cat_list = list()
-            for j in categories:
+            for j in categories['Category']:
                 cat_list.append(random.random())
             store_list = list()
             for k in list(stores['StoreID']):
@@ -281,7 +304,8 @@ def generate_customers(read_or_generate, categories, stores):
 # 12 - The increase in sales of promoted products will partially increase total sales
 ####################################################################################################################
 stores = generate_stores(read_or_generate)
-categories, products = generate_products(read_or_generate)
+categories = generate_categories(read_or_generate)
+products = generate_products(read_or_generate, categories)
 substitutes = generate_substitutes(read_or_generate, products)
 complements = generate_complements(read_or_generate, products)
 inflation = generate_inflation(read_or_generate, products)
@@ -326,9 +350,12 @@ for i in range(1 + int((endda - begda).days)):
         s = sum(store_preferences[0])
         store_probability = [c / s for c in store_preferences]
         selected_store = np.random.choice(stores['StoreID'], 1, p=list(store_probability[0]), replace=False)
-        preference_list = customer[customer['CustomerID'] == j][categories].values[0]
-        s = sum(preference_list)
-        customer_probability = [c / s for c in preference_list]
+        preference_list = customer[customer['CustomerID'] == j][categories['Category']].values[0]
+        current_month = curr_date.month
+        category_probabilities = categories[str(current_month)].values
+        overall_preference_list = [category_probabilities[pindex] * preference_list[pindex] for pindex, pval in enumerate(category_probabilities)]
+        s = sum(overall_preference_list)
+        customer_probability = [c / s for c in overall_preference_list]
         if curr_date.weekday() > 4:
             average_volume = int(customer[customer['CustomerID'] == j]['WeVolume'])
         else:
@@ -336,7 +363,7 @@ for i in range(1 + int((endda - begda).days)):
         vol = random.randint(int(average_volume / 2), int(3 * average_volume / 2))
         basket = list()
         while vol > 0 and max_sales > sales_count:
-            selected_category = numpy.random.choice(categories, 1, p=customer_probability, replace=False)
+            selected_category = numpy.random.choice(list(categories['Category']), 1, p=customer_probability, replace=False)
             product_list = products[products['Category'] == selected_category[0]]['ProductID'].values
             product_demands = products[products['Category'] == selected_category[0]]['Demand'].values
             try:
